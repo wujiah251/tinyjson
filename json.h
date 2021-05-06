@@ -6,9 +6,15 @@
 #include <deque>
 #include <map>
 #include <initializer_list>
+#include <type_traits>
 
 using std::deque;
+using std::enable_if;
 using std::initializer_list;
+using std::is_convertible;
+using std::is_floating_point;
+using std::is_integral;
+using std::is_same;
 using std::map;
 using std::string;
 
@@ -131,7 +137,9 @@ public:
     json(json &&other);
     // 析构函数
     ~json();
-
+    // 重载复制函数
+    json &operator=(json &&other);
+    json &operator=(const json &other);
     // 根据类型返回实例
     static json Make(Class type)
     {
@@ -139,10 +147,30 @@ public:
         ret.SetType(type);
         return ret;
     }
-
-    // 重载复制函数
-    json &operator=(json &&other);
-    json &operator=(const json &other);
+    // 利用type_traits技法实现的构造函数
+    // bool类型
+    template <typename T>
+    json(T b, typename enable_if<is_same<T, bool>::value>::type * = 0)
+        : Data(b), Type(Class::Boolean)
+    {
+    }
+    // 整型
+    template <typename T>
+    json(T i, typename enable_if<is_integral<T>::value && !is_same<T, bool>::value>::type * = 0)
+        : Internal((long)i), Type(Class::Integral)
+    {
+    }
+    // 浮点数
+    template <typename T>
+    json(T f, typename enable_if<is_floating_point<T>::value>::type * = 0)
+        : Data(double(f)), Type(Class::Floating)
+    {
+    }
+    template <typename T>
+    json(T s, typename enable_if<is_convertible<T, string>::value>::type * = 0)
+        : Data(string(s)), Type(Class::String)
+    {
+    }
 
     // 根据key获取value
     json &operator[](const string &key)
@@ -199,7 +227,61 @@ public:
     {
         return (Type == Class::Boolean) ? Data.Bool : false;
     }
+
     friend std::ostream &operator<<(std::ostream &, const json &);
+
+    // 生成可打印的字符串格式
+    // depth是递归深度，tab是缩进大小，然后
+    string dump(int depth = 1, string tab = "  ") const
+    {
+        string pad = "";
+        for (int i = 0; i < depth; ++i, pad += tab)
+            ;
+        switch (Type)
+        {
+        case Class::Null:
+            return "null";
+        case Class::Object:
+        {
+            string s = "{\n";
+            bool skip = true;
+            for (auto &p : *Data.Map)
+            {
+                if (!skip)
+                    s += ",\n";
+                s += (pad + "\"" + p.first + "\" : " + p.second.dump(depth + 1, tab));
+                skip = false;
+            }
+            s += ("\n" + pad.erase(0, 2) + "}");
+            return s;
+        }
+        case Class::Array:
+        {
+            string s = "[";
+            bool skip = true;
+            for (auto &p : *Data.Array)
+            {
+                if (!skip)
+                    s += ",";
+                s += p.dump(depth + 1, tab);
+                skip = false;
+            }
+            s += "]";
+            return s;
+        }
+        case Class::String:
+            return "\"" + json_escape(*Data.String) + "\"";
+        case Class::Floating:
+            return std::to_string(Data.Float);
+        case Class::Integral:
+            return std::to_string(Data.Int);
+        case Class::Boolean:
+            return Data.Bool ? "true" : "false";
+        default:
+            return "";
+        }
+        return "";
+    }
 
 private:
     // 根据类型重新创建对象（分配空间）
