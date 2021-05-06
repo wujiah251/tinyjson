@@ -184,8 +184,7 @@ private:
     /*
     根据类型释放空间，
     */
-    void
-    ClearData()
+    void ClearData()
     {
         switch (Type)
         {
@@ -203,11 +202,41 @@ private:
     Class Type = Class::Null;
 };
 
+// 列表初始化
 json::json(initializer_list<json> list) : json()
 {
     SetType(Class::Object);
     for (auto i = list.begin(), e = list.end(); i != e; ++i, ++i)
         operator[](i->toString()) = *std::next(i);
 }
-
+// 左值复制构造函数
+json::json(const json &other)
+{
+    switch (other.Type)
+    {
+    case Class::Object:
+        Data.Map = new map<string, json>(other.Data.Map->begin(), other.Data.Map->end());
+        break;
+    case Class::Array:
+        Data.Array = new deque<json>(other.Data.Array->begin(), other.Data.Array->end());
+        break;
+    case Class::String:
+        Data.String = new string(*other.Data.String);
+    default:
+        Data = other.Data;
+    }
+    Type = other.Type;
+}
+// 右值复制构造函数
+json::json(json &&other)
+    : Data(other.Data), Type(other.Type)
+{
+    other.Type = Class::Null;
+    other.Data.Map = nullptr;
+}
+// 析构函数
+json::~json()
+{
+    ClearData();
+}
 #endif
