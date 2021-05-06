@@ -77,16 +77,71 @@ public:
         Integral,
         Boolean
     };
+    // 包装器
+    template <typename Container>
+    class jsonWrapper
+    {
+        Container *object;
+
+    public:
+        jsonWrapper(Container *val) : object(val) {}
+        jsonWrapper(std::nullptr_t) : object(nullptr) {}
+        typename Container::iterator begin()
+        {
+            return object ? object->begin() : typename Container::iterator();
+        }
+        typename Container::iterator end()
+        {
+            return object ? object->end() : typename Container::iterator();
+        }
+        typename Container::const_iterator begin() const
+        {
+            return object ? object->begin() : typename Container::iterator();
+        }
+        typename Container::const_iterator end() const
+        {
+            return object ? object->end() : typename Container::iterator();
+        }
+    };
+    template <typename Container>
+    class jsonConstWrapper
+    {
+        const Container *object;
+
+    public:
+        jsonConstWrapper(const Container *val) : object(val) {}
+        jsonConstWrapper(std::nullptr_t) : object(nullptr) {}
+        typename Container::const_iterator begin() const
+        {
+            return object ? object->begin() : typename Container::const_iterator();
+        }
+        typename Container::const_iterator end() const
+        {
+            return object ? object->end() : typename Container::const_iterator();
+        }
+    };
+
     // 构造函数
-    json() : Data(), Type(Class::Null) {}
+    json() : Data(), Type(Class::Null)
+    {
+    }
     json(initializer_list<json> list);
     // 复制构造函数
     json(const json &other);
     json(json &&other);
     // 析构函数
     ~json();
+
+    // 根据类型返回实例
+    static json Make(Class type)
+    {
+        json ret;
+        ret.SetType(type);
+        return ret;
+    }
+
     // 重载复制函数
-    json &operator=(json &other);
+    json &operator=(json &&other);
     json &operator=(const json &other);
 
     // 根据key获取value
@@ -238,5 +293,56 @@ json::json(json &&other)
 json::~json()
 {
     ClearData();
+}
+
+// 重载赋值函数
+json::json &json::operator=(json &&other)
+{
+    ClearData();
+    Data = other.Data;
+    Type = other.Type;
+    other.ClearData();
+    return *this;
+}
+json::json &json::operator=(const json &other)
+{
+    ClearData();
+    switch (other.Type)
+    {
+    case Class::Object:
+        Data.Map = new map<string, json>(other.Data.Map->begin(), other.Data.Map->end());
+        break;
+    case Class::Array:
+        Data.Array = new deque<json>(other.Data.Array->begin(), other.Data.Array->end());
+        break;
+    case Class::String:
+        Data.String = new string(*other.Data.String);
+    default:
+        Data = other.Data;
+    }
+    Type = other.Type;
+}
+
+// 获得不同类型的实例
+// 获取一个数组
+json Array()
+{
+    return std::move(json::Make(json::Class::Array));
+}
+template <typename... T>
+json Array(T... args)
+{
+    json arr = json::Make(json::Class::Array);
+    arr.append(args...);
+    return std::move(arr);
+}
+json Object()
+{
+    return std::move(json::Make(json::Class::Object));
+}
+std::ostream &operator<<(std::ostream &os, const json &json)
+{
+    os << json.dump();
+    return os;
 }
 #endif
