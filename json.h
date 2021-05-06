@@ -7,6 +7,7 @@
 #include <map>
 #include <initializer_list>
 #include <type_traits>
+#include <iostream>
 
 using std::deque;
 using std::enable_if;
@@ -176,6 +177,15 @@ namespace myJson
             ret.SetType(type);
             return ret;
         }
+        // 根据字符串解析出json对象
+        static json Load(const string &);
+
+        // 提供给array的函数
+        template <typename T>
+        void append(T arg);
+        template <typename T, typename... U>
+        void append(T arg, U... args);
+
         // 利用type_traits技法实现的构造函数
         // bool类型
         template <typename T>
@@ -186,7 +196,7 @@ namespace myJson
         // 整型
         template <typename T>
         json(T i, typename enable_if<is_integral<T>::value && !is_same<T, bool>::value>::type * = 0)
-            : Internal((long)i), Type(Class::Integral)
+            : Data((long)i), Type(Class::Integral)
         {
         }
         // 浮点数
@@ -248,11 +258,11 @@ namespace myJson
         {
             return (Type == Class::String) ? Data.Float : 0.0;
         }
-        long ToInt() const
+        long toInt() const
         {
             return (Type == Class::Integral) ? Data.Int : 0;
         }
-        bool ToBool() const
+        bool toBool() const
         {
             return (Type == Class::Boolean) ? Data.Bool : false;
         }
@@ -372,6 +382,20 @@ namespace myJson
         Class Type = Class::Null;
     };
 
+    // 向数组添加元素
+    template <typename T>
+    void json::append(T arg)
+    {
+        SetType(Class::Array);
+        Data.Array->emplace_back(arg);
+    }
+    template <typename T, typename... U>
+    void json::append(T arg, U... args)
+    {
+        append(arg);
+        append(args...);
+    }
+
     // 重载赋值函数
     json &json::operator=(json &&other)
     {
@@ -394,10 +418,12 @@ namespace myJson
             break;
         case Class::String:
             Data.String = new string(*other.Data.String);
+            break;
         default:
             Data = other.Data;
         }
         Type = other.Type;
+        return *this;
     }
 
     // 获得不同类型的实例
@@ -418,34 +444,294 @@ namespace myJson
         return std::move(json::Make(json::Class::Object));
     }
 
-    // 解析函数
-
-    void consume_ws(const string &str, size_t &offset)
-    {
-        // 判断是不是空白符：
-        // ' '、'\t'、'\n'、'\v'、'\f'、'\r'
-        while (isspace(str[offset]))
-            ++offset;
-    }
-
-    // 解析对象（key-value）
     namespace
     {
-        json parse_object(const string &str, size_t &offset)
+        // 先声明parseNext
+        json parseNext(const string &str, size_t &offset);
+
+        // 跳过前面的空白符
+        void consumeWs(const string &str, size_t &offset)
         {
-            json object = json::Make(json::Class::Object);
+            // 判断是不是空白符：
+            // ' '、'\t'、'\n'、'\v'、'\f'、'\r'
+            while (isspace(str[offset]))
+                ++offset;
+        }
+
+        // 通过有限状态机来进行解析。
+        // 主状态机为parseNext，其余为从状态机。
+        // 解析对象（key-value）
+        json parseObject(const string &str, size_t &offset)
+        {
+            json res = json::Make(json::Class::Object);
             ++offset;
-            consume_ws(str, offset);
+            consumeWs(str, offset);
             if (str[offset] == '}')
             {
                 ++offset;
-                return std::move(object);
+                return std::move(res);
             }
+            while (true)
+            {
+                json key = parseNext(str, offset);
+                consumeWs(str, offset);
+                if (str[offset] != ':')
+                {
+                    std::cout << "Error: Pharse object failed!" << std::endl;
+                    break;
+                }
+                consumeWs(str, ++offset);
+                json value = parseNext(str, offset);
+                res[key.toString()] = value;
+                consumeWs(str, offset);
+                if (str[offset] == ',')
+                {
+                    ++offset;
+                    continue;
+                }
+                else if (str[offset] == '}')
+                {
+                    ++offset;
+                    break;
+                }
+                else
+                {
+                    std::cout << "Error: Pharse object failed!" << std::endl;
+                    break;
+                }
+            }
+            return std::move(res);
+        }
+        // 解析数组
+        json parseArray(const string &str, size_t &offset)
+        {
+            json res = json::Make(json::Class::Array);
+            unsigned index = 0;
+            ++offset;
+            consumeWs(str, offset);
+            if (str[offset] == ']')
+            {
+                ++offset;
+                return std::move(res);
+            }
+            while (true)
+            {
+                res[index++] = parseNext(str, offset);
+                consumeWs(str, offset);
+                if (str[offset] == ',')
+                {
+                    ++offset;
+                    continue;
+                }
+                else if (str[offset] == ']')
+                {
+                    ++offset;
+                    break;
+                }
+                else
+                {
+                    std::cout << "Error: Parse array failed!" << std::endl;
+                    return std::move(json::Make(json::Class::Array));
+                }
+            }
+            return std::move(res);
+        }
+        // 解析字符串
+        json parseString(const string &str, size_t &offset)
+        {
+            json res;
+            string val;
+            for (char c = str[++offset]; c != '\"'; c = str[++offset])
+            {
+                // 额外转义过的字符
+                if (c == '\\')
+                {
+                    switch (str[++offset])
+                    {
+                    case '\"':
+                        val += '\"';
+                        break;
+                    case '\\':
+                        val += '\\';
+                        break;
+                    case '/':
+                        val += '/';
+                        break;
+                    case 'b':
+                        val += '\b';
+                        break;
+                    case 'f':
+                        val += '\f';
+                        break;
+                    case 'n':
+                        val += '\n';
+                        break;
+                    case 'r':
+                        val += '\r';
+                    case 't':
+                        val += '\t';
+                        break;
+                    case 'u':
+                    {
+                        val += "\\u";
+                        for (unsigned i = 1; i <= 4; ++i)
+                        {
+                            c = str[offset + i];
+                            if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
+                                val += c;
+                            else
+                            {
+                                std::cout << "Error: Parse string failed!" << std::endl;
+                                return std::move(json::Make(json::Class::String));
+                            }
+                        }
+                        offset += 4;
+                    }
+                    break;
+                    default:
+                        val += '\\';
+                        break;
+                    }
+                }
+                else
+                    val += c;
+            }
+            ++offset;
+            res = val;
+            return std::move(res);
+        }
+        // 解析数字（浮点数或者整型数）
+        json parseNumber(const string &str, size_t &offset)
+        {
+            json res;
+            string val, exp_str;
+            char c;
+            bool isDouble = false;
+            long exp = 0;
+            // 先把内容读入到val中
+            while (true)
+            {
+                c = str[offset++];
+                if ((c == '-') || (c >= '0' && c <= '9'))
+                    val += c;
+                else if (c == '.')
+                {
+                    val += c;
+                    isDouble = true;
+                }
+                else
+                {
+                    break;
+                }
+            }
+            if (c == 'E' || c == 'e')
+            {
+                c = str[offset++];
+                if (c == '-')
+                {
+                    ++offset;
+                    exp_str += '-';
+                }
+                while (true)
+                {
+                    c = str[offset++];
+                    if (c >= '0' && c <= '9')
+                        exp_str += c;
+                    else if (!isspace(c) && c != ',' && c != ']' && c != '}')
+                    {
+                        std::cout << "Error: Parse number failed!" << std::endl;
+                        return std::move(json::Make(json::Class::Null));
+                    }
+                    else
+                        break;
+                }
+                exp = std::stol(exp_str);
+            }
+            else if (!isspace(c) && c != ',' && c != ']' && c != '}')
+            {
+                std::cout << "Error: Parse number failed" << std::endl;
+                return std::move(json::Make(json::Class::Null));
+            }
+            --offset;
+            if (isDouble)
+            {
+                // 浮点数
+                res = std::stod(val) * std::pow(10, exp);
+            }
+            else
+            {
+                if (!exp_str.empty())
+                    res = std::stol(val) * std::pow(10, exp);
+                else
+                    res = std::stol(val);
+            }
+            return std::move(res);
+        }
+        // 解析布尔值
+        json parseBool(const string &str, size_t &offset)
+        {
+            json res;
+            if (str.substr(offset, 4) == "true")
+                res = true;
+            else if (str.substr(offset, 5) == "false")
+                res = false;
+            else
+            {
+                std::cerr << "Error: Pharse boolean failed!" << std::endl;
+                return std::move(json::Make(json::Class::Null));
+            }
+            offset += (res.toBool() ? 4 : 5);
+            return std::move(res);
+        }
+        // 解析null
+        json parseNull(const string &str, size_t &offset)
+        {
+            json res;
+            if (str.substr(offset, 4) != "null")
+            {
+                std::cout << "Error: Pharse null failed!" << std::endl;
+                return std::move(res);
+            }
+            offset += 4;
+            return std::move(res);
         }
 
-        json parse_next(const string &, size_t &)
+        json parseNext(const string &str, size_t &offset)
         {
+            char value;
+            consumeWs(str, offset);
+            switch (value)
+            {
+            case '[':
+                // array
+                return std::move(parseArray(str, offset));
+            case '{':
+                // dictionary
+                return std::move(parseObject(str, offset));
+            case '\"':
+                // "string"
+                return std::move(parseString(str, offset));
+            case 't':
+            case 'f':
+                // true or false
+                return std::move(parseBool(str, offset));
+            case 'n':
+                //null
+                return std::move(parseNull(str, offset));
+            default:
+                if ((value <= '9' && value >= '0') ||
+                    value == '-')
+                    return std::move(parseNumber(str, offset));
+            }
+            std::cout << "Error: Parse failed!" << std::endl;
+            return json();
         }
-    };
-};
+
+    }
+    json json::Load(const string &str)
+    {
+        size_t offset = 0;
+        return std::move(parseNext(str, offset));
+    }
+}
 #endif
