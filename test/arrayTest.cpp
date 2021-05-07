@@ -1,22 +1,22 @@
-#include "example.h"
+#include "../json.h"
 #include <iostream>
 
-using json::JSON;
+using myJson::json;
 using namespace std;
 
 int main()
 {
-    JSON array;
+    json array;
     array[2] = "Test2";
     cout << array << endl;
     array[1] = "Test1";
     cout << array << endl;
     array[0] = "Test0";
     cout << array << endl;
-    array[3] = "Test4";
+    array[3] = "Test3";
     cout << array << endl;
     // Arrays can be nested:
-    JSON Array2;
+    json Array2;
     Array2[2][0][1] = true;
     cout << Array2 << endl;
 }

@@ -3,13 +3,12 @@
 
 #include <string>
 #include <cmath>
-#include <deque>
+#include <vector>
 #include <map>
 #include <initializer_list>
 #include <type_traits>
 #include <iostream>
 
-using std::deque;
 using std::enable_if;
 using std::initializer_list;
 using std::is_convertible;
@@ -18,6 +17,7 @@ using std::is_integral;
 using std::is_same;
 using std::map;
 using std::string;
+using std::vector;
 
 namespace myJson
 {
@@ -67,7 +67,7 @@ namespace myJson
             BackingData(bool b) : Bool(b) {}
             BackingData(string s) : String(new string(s)) {}
             BackingData() : Int(0) {}
-            deque<json> *Array;
+            vector<json> *Array;
             map<string, json> *Map;
             string *String;
             double Float;
@@ -147,10 +147,11 @@ namespace myJson
                 Data.Map = new map<string, json>(other.Data.Map->begin(), other.Data.Map->end());
                 break;
             case Class::Array:
-                Data.Array = new deque<json>(other.Data.Array->begin(), other.Data.Array->end());
+                Data.Array = new vector<json>(other.Data.Array->begin(), other.Data.Array->end());
                 break;
             case Class::String:
                 Data.String = new string(*other.Data.String);
+                break;
             default:
                 Data = other.Data;
             }
@@ -165,7 +166,19 @@ namespace myJson
         // 析构函数
         ~json()
         {
-            ClearData();
+            switch (Type)
+            {
+            case Class::Array:
+                delete Data.Array;
+                break;
+            case Class::Object:
+                delete Data.Map;
+                break;
+            case Class::String:
+                delete Data.String;
+                break;
+            default:;
+            }
         }
         // 重载复制函数
         json &operator=(json &&other);
@@ -222,7 +235,9 @@ namespace myJson
         {
             SetType(Class::Array);
             if (index >= Data.Array->size())
+            {
                 Data.Array->resize(index + 1);
+            }
             return Data.Array->operator[](index);
         }
 
@@ -344,7 +359,7 @@ namespace myJson
                 Data.Map = new map<string, json>();
                 break;
             case Class::Array:
-                Data.Array = new deque<json>();
+                Data.Array = new vector<json>();
                 break;
             case Class::String:
                 Data.String = new string();
@@ -402,7 +417,8 @@ namespace myJson
         ClearData();
         Data = other.Data;
         Type = other.Type;
-        other.ClearData();
+        other.Type = Class::Null;
+        other.Data.Map = nullptr;
         return *this;
     }
     json &json::operator=(const json &other)
@@ -414,7 +430,7 @@ namespace myJson
             Data.Map = new map<string, json>(other.Data.Map->begin(), other.Data.Map->end());
             break;
         case Class::Array:
-            Data.Array = new deque<json>(other.Data.Array->begin(), other.Data.Array->end());
+            Data.Array = new vector<json>(other.Data.Array->begin(), other.Data.Array->end());
             break;
         case Class::String:
             Data.String = new string(*other.Data.String);
