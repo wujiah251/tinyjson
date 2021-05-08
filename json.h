@@ -86,56 +86,13 @@ namespace myJson
             Integral,
             Boolean
         };
-        // 包装器
-        template <typename Container>
-        class jsonWrapper
-        {
-            Container *object;
-
-        public:
-            jsonWrapper(Container *val) : object(val) {}
-            jsonWrapper(std::nullptr_t) : object(nullptr) {}
-            typename Container::iterator begin()
-            {
-                return object ? object->begin() : typename Container::iterator();
-            }
-            typename Container::iterator end()
-            {
-                return object ? object->end() : typename Container::iterator();
-            }
-            typename Container::const_iterator begin() const
-            {
-                return object ? object->begin() : typename Container::iterator();
-            }
-            typename Container::const_iterator end() const
-            {
-                return object ? object->end() : typename Container::iterator();
-            }
-        };
-        template <typename Container>
-        class jsonConstWrapper
-        {
-            const Container *object;
-
-        public:
-            jsonConstWrapper(const Container *val) : object(val) {}
-            jsonConstWrapper(std::nullptr_t) : object(nullptr) {}
-            typename Container::const_iterator begin() const
-            {
-                return object ? object->begin() : typename Container::const_iterator();
-            }
-            typename Container::const_iterator end() const
-            {
-                return object ? object->end() : typename Container::const_iterator();
-            }
-        };
-
         // 构造函数
         json() : Data(), Type(Class::Null) {}
+        // 序列化构造函数
         json(initializer_list<json> list) : json()
         {
             SetType(Class::Object);
-            for (auto i = list.begin(), e = list.end(); i != e; ++i, ++i)
+            for (auto i = list.begin(), e = list.end(); i != e; i++, i++)
                 operator[](i->toString()) = *std::next(i);
         }
         // 左值复制构造函数
@@ -180,8 +137,10 @@ namespace myJson
             default:;
             }
         }
-        // 重载复制函数
+        // 重载赋值函数
+        // 复制右值
         json &operator=(json &&other);
+        // 复制左值
         json &operator=(const json &other);
         // 根据类型返回实例
         static json Make(Class type)
@@ -218,12 +177,12 @@ namespace myJson
             : Data(double(f)), Type(Class::Floating)
         {
         }
+        // 字符串类型
         template <typename T>
         json(T s, typename enable_if<is_convertible<T, string>::value>::type * = 0)
             : Data(string(s)), Type(Class::String)
         {
         }
-
         // 根据key获取value
         json &operator[](const string &key)
         {
@@ -240,7 +199,7 @@ namespace myJson
             }
             return Data.Array->operator[](index);
         }
-
+        // 获取长度信息
         int length() const
         {
             if (Type == Class::Array)
@@ -250,6 +209,7 @@ namespace myJson
             else
                 return -1;
         }
+        // 获取规模信息
         int size() const
         {
             if (Type == Class::Object)
@@ -261,22 +221,27 @@ namespace myJson
                 return Data.Array->size();
             }
         }
-
+        // 获取类型信息
         Class jsonType() const { return Type; }
+        // 判空
         bool isNull() const { return Type == Class::Null; }
         // 返回数据成员
+        // 转成字符串类型
         string toString() const
         {
             return (Type == Class::String) ? std::move(json_escape(*Data.String)) : string("");
         }
+        // 转成浮点数
         double toFloat() const
         {
             return (Type == Class::String) ? Data.Float : 0.0;
         }
+        // 转成整型
         long toInt() const
         {
             return (Type == Class::Integral) ? Data.Int : 0;
         }
+        // 转成布尔类型
         bool toBool() const
         {
             return (Type == Class::Boolean) ? Data.Bool : false;
@@ -334,7 +299,7 @@ namespace myJson
             }
             return "";
         }
-
+        // 按照字符串格式输出json对象
         friend std::ostream &operator<<(std::ostream &os, const json &jsonObject)
         {
             os << jsonObject.dump();
@@ -412,6 +377,7 @@ namespace myJson
     }
 
     // 重载赋值函数
+    // 右值赋值
     json &json::operator=(json &&other)
     {
         ClearData();
@@ -421,6 +387,7 @@ namespace myJson
         other.Data.Map = nullptr;
         return *this;
     }
+    // 左值赋值
     json &json::operator=(const json &other)
     {
         ClearData();
@@ -455,11 +422,12 @@ namespace myJson
         arr.append(args...);
         return std::move(arr);
     }
+    // 获取一个字典
     json Object()
     {
         return std::move(json::Make(json::Class::Object));
     }
-
+    // 这个名称空间里面是解析使用的函数
     namespace
     {
         // 先声明parseNext
@@ -620,10 +588,9 @@ namespace myJson
         json parseNumber(const string &str, size_t &offset)
         {
             json res;
-            string val, exp_str;
+            string val;
             char c;
             bool isDouble = false;
-            long exp = 0;
             // 先把内容读入到val中
             while (true)
             {
@@ -640,30 +607,7 @@ namespace myJson
                     break;
                 }
             }
-            if (c == 'E' || c == 'e')
-            {
-                c = str[offset++];
-                if (c == '-')
-                {
-                    ++offset;
-                    exp_str += '-';
-                }
-                while (true)
-                {
-                    c = str[offset++];
-                    if (c >= '0' && c <= '9')
-                        exp_str += c;
-                    else if (!isspace(c) && c != ',' && c != ']' && c != '}')
-                    {
-                        std::cout << "Error: Parse number failed!" << std::endl;
-                        return std::move(json::Make(json::Class::Null));
-                    }
-                    else
-                        break;
-                }
-                exp = std::stol(exp_str);
-            }
-            else if (!isspace(c) && c != ',' && c != ']' && c != '}')
+            if (!isspace(c) && c != '\0' && c != ',' && c != ']' && c != '}')
             {
                 std::cout << "Error: Parse number failed" << std::endl;
                 return std::move(json::Make(json::Class::Null));
@@ -671,15 +615,11 @@ namespace myJson
             --offset;
             if (isDouble)
             {
-                // 浮点数
-                res = std::stod(val) * std::pow(10, exp);
+                res = std::stod(val);
             }
             else
             {
-                if (!exp_str.empty())
-                    res = std::stol(val) * std::pow(10, exp);
-                else
-                    res = std::stol(val);
+                res = std::stol(val);
             }
             return std::move(res);
         }
@@ -711,11 +651,12 @@ namespace myJson
             offset += 4;
             return std::move(res);
         }
-
+        // 主状态机
         json parseNext(const string &str, size_t &offset)
         {
             char value;
             consumeWs(str, offset);
+            value = str[offset];
             switch (value)
             {
             case '[':
@@ -739,11 +680,12 @@ namespace myJson
                     value == '-')
                     return std::move(parseNumber(str, offset));
             }
-            std::cout << "Error: Parse failed!" << std::endl;
+            std::cout << "Error: Parse Next failed!" << std::endl;
             return json();
         }
 
     }
+    // 解析json字符串
     json json::Load(const string &str)
     {
         size_t offset = 0;

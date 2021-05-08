@@ -13,7 +13,7 @@ int main()
     cout << array << endl;
     array[0] = "Test0";
     cout << array << endl;
-    array[3] = "Test3";
+    array[3] = "Test4";
     cout << array << endl;
     // Arrays can be nested:
     json Array2;
